@@ -1,0 +1,7 @@
+bin/
+obj/
+*.user
+.vs/
+CarCare/Data/app.db
+CarCare/Data/app.db-shm
+CarCare/Data/app.db-wal

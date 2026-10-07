@@ -1,0 +1,20 @@
+@page "/"
+
+<PageTitle>CarCare</PageTitle>
+
+<h1>CarCare</h1>
+<p class="lead">
+    Keep your vehicle's fuel, driving and maintenance history in one place.
+</p>
+
+<AuthorizeView>
+    <Authorized>
+        <p>Welcome back! Start by setting up your vehicle.</p>
+        <a class="btn btn-primary" href="onboarding">Vehicle setup</a>
+    </Authorized>
+    <NotAuthorized>
+        <p>Create a free account to start tracking your vehicle.</p>
+        <a class="btn btn-primary me-2" href="Account/Register">Register</a>
+        <a class="btn btn-outline-primary" href="Account/Login">Log in</a>
+    </NotAuthorized>
+</AuthorizeView>

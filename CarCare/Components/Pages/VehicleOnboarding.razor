@@ -1,0 +1,195 @@
+@page "/onboarding"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using CarCare.Data
+@using CarCare.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Vehicle Setup - CarCare</PageTitle>
+
+<h1>Vehicle Setup</h1>
+
+@if (loading)
+{
+    <p><em>Loading...</em></p>
+}
+else if (vehicle is not null)
+{
+    @* The user already has a vehicle, so the wizard is skipped (one vehicle per user). *@
+    <div class="alert alert-info" role="status">
+        <h2 class="h4 alert-heading">Your vehicle is set up</h2>
+        <p class="mb-0">
+            <strong>@vehicle.Year @vehicle.Make @vehicle.Model</strong><br />
+            Initial odometer reading: @vehicle.InitialOdometerReading.ToString("N0") miles
+        </p>
+    </div>
+    <p class="text-muted">CarCare currently tracks one primary vehicle per account.</p>
+}
+else
+{
+    <p aria-live="polite">
+        Step @currentStep of @TotalSteps:
+        <strong>@StepTitle</strong>
+    </p>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    <div class="card" style="max-width: 32em;">
+        <div class="card-body">
+            @if (currentStep == 1)
+            {
+                <div class="mb-3">
+                    <label for="make" class="form-label">Make</label>
+                    <input id="make" class="form-control" @bind="make" @bind:event="oninput" placeholder="e.g. Toyota" autocomplete="off" />
+                </div>
+                <div class="mb-3">
+                    <label for="model" class="form-label">Model</label>
+                    <input id="model" class="form-control" @bind="model" @bind:event="oninput" placeholder="e.g. Corolla" autocomplete="off" />
+                </div>
+            }
+            else if (currentStep == 2)
+            {
+                <div class="mb-3">
+                    <label for="year" class="form-label">Year</label>
+                    <input id="year" type="number" class="form-control" @bind="year" placeholder="e.g. 2022" />
+                </div>
+            }
+            else if (currentStep == 3)
+            {
+                <div class="mb-3">
+                    <label for="odometer" class="form-label">Initial odometer reading (miles)</label>
+                    <input id="odometer" type="number" class="form-control" @bind="odometer" placeholder="e.g. 15000" />
+                </div>
+            }
+            else
+            {
+                <p>Please confirm your vehicle details:</p>
+                <dl>
+                    <dt>Make</dt><dd>@make</dd>
+                    <dt>Model</dt><dd>@model</dd>
+                    <dt>Year</dt><dd>@year</dd>
+                    <dt>Initial odometer reading</dt><dd>@odometer miles</dd>
+                </dl>
+            }
+
+            <div class="d-flex justify-content-between mt-4">
+                <button class="btn btn-secondary" @onclick="Back" disabled="@(currentStep == 1)">Back</button>
+
+                @if (currentStep < TotalSteps)
+                {
+                    <button class="btn btn-primary" @onclick="Next">Next</button>
+                }
+                else
+                {
+                    <button class="btn btn-success" @onclick="Finish" disabled="@saving">
+                        @(saving ? "Saving..." : "Confirm & finish")
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private const int TotalSteps = 4;
+    private int currentStep = 1;
+    private string errorMessage = string.Empty;
+    private bool loading = true;
+    private bool saving;
+    private string? userId;
+    private Vehicle? vehicle;
+
+    // Wizard state, kept across steps until the user confirms.
+    private string make = string.Empty;
+    private string model = string.Empty;
+    private int? year;
+    private int? odometer;
+
+    private string StepTitle => currentStep switch
+    {
+        1 => "Make & model",
+        2 => "Year",
+        3 => "Initial odometer reading",
+        _ => "Review & confirm"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Identify the signed-in user, then load their vehicle (if any).
+        var state = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        if (userId is not null)
+        {
+            vehicle = await Db.Vehicles.FirstOrDefaultAsync(v => v.UserId == userId);
+        }
+
+        loading = false;
+    }
+
+    private void Back()
+    {
+        errorMessage = string.Empty;
+        if (currentStep > 1)
+        {
+            currentStep--;
+        }
+    }
+
+    private void Next()
+    {
+        errorMessage = string.Empty;
+
+        // Validate only the fields shown on the current step.
+        if (currentStep == 1 && (string.IsNullOrWhiteSpace(make) || string.IsNullOrWhiteSpace(model)))
+        {
+            errorMessage = "Please enter both the make and the model.";
+            return;
+        }
+
+        if (currentStep == 2 && (year is null || year < 1900 || year > DateTime.UtcNow.Year + 1))
+        {
+            errorMessage = $"Please enter a year between 1900 and {DateTime.UtcNow.Year + 1}.";
+            return;
+        }
+
+        if (currentStep == 3 && (odometer is null || odometer < 0 || odometer > 2_000_000))
+        {
+            errorMessage = "Please enter a valid odometer reading (0 or more).";
+            return;
+        }
+
+        currentStep++;
+    }
+
+    private async Task Finish()
+    {
+        if (userId is null || year is null || odometer is null)
+        {
+            errorMessage = "Something went wrong. Please sign in again and retry.";
+            return;
+        }
+
+        saving = true;
+        var newVehicle = new Vehicle
+        {
+            UserId = userId,
+            Make = make.Trim(),
+            Model = model.Trim(),
+            Year = year.Value,
+            InitialOdometerReading = odometer.Value
+        };
+
+        Db.Vehicles.Add(newVehicle);
+        await Db.SaveChangesAsync();
+
+        vehicle = newVehicle;
+        saving = false;
+    }
+}
