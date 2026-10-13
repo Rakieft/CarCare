@@ -1,0 +1,117 @@
+@page "/dashboard"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using CarCare.Data
+@using CarCare.Models
+@using CarCare.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext Db
+@inject CurrentVehicleService CurrentVehicle
+
+<PageTitle>Dashboard - CarCare</PageTitle>
+
+<h1>Dashboard</h1>
+
+@if (loading)
+{
+    <p><em>Loading...</em></p>
+}
+else if (vehicle is null)
+{
+    <div class="alert alert-warning" role="status">
+        Set up your vehicle to see your dashboard. <a href="onboarding">Go to Vehicle Setup</a>
+    </div>
+}
+else
+{
+    <p class="lead">@vehicle.Year @vehicle.Make @vehicle.Model</p>
+
+    <section aria-labelledby="stats-heading" class="mb-4">
+        <h2 id="stats-heading" class="h4">Statistics</h2>
+        <dl class="row">
+            <dt class="col-sm-4">Current odometer</dt>
+            <dd class="col-sm-8">@currentOdometer.ToString("N0") mi</dd>
+
+            <dt class="col-sm-4">Fill-ups recorded</dt>
+            <dd class="col-sm-8">@fuel.Count</dd>
+
+            <dt class="col-sm-4">Total fuel cost</dt>
+            <dd class="col-sm-8">@fuel.Sum(f => f.Cost).ToString("C")</dd>
+
+            <dt class="col-sm-4">Average fuel economy</dt>
+            <dd class="col-sm-8">@(mpg is null ? "Not enough data (add 2 or more fill-ups)" : $"{mpg} mpg")</dd>
+
+            <dt class="col-sm-4">Total maintenance cost</dt>
+            <dd class="col-sm-8">@maintenance.Sum(m => m.Cost).ToString("C")</dd>
+        </dl>
+    </section>
+
+    <section aria-labelledby="reminders-heading" class="mb-4">
+        <h2 id="reminders-heading" class="h4">Maintenance reminders</h2>
+        @if (reminders.Count == 0)
+        {
+            <p>No reminders yet. Add a next service date or odometer when you record maintenance.</p>
+        }
+        else
+        {
+            <ul class="list-group">
+                @foreach (var r in reminders)
+                {
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><strong>@r.Type</strong> - @r.Detail</span>
+                        <span class="badge @BadgeClass(r.Status)">@StatusText(r.Status)</span>
+                    </li>
+                }
+            </ul>
+        }
+    </section>
+
+    <p>
+        <a class="btn btn-primary me-2" href="fuel">Fuel records</a>
+        <a class="btn btn-primary" href="maintenance">Maintenance records</a>
+    </p>
+}
+
+@code {
+    private Vehicle? vehicle;
+    private bool loading = true;
+    private List<FuelRecord> fuel = new();
+    private List<MaintenanceRecord> maintenance = new();
+    private List<Reminder> reminders = new();
+    private int currentOdometer;
+    private decimal? mpg;
+
+    protected override async Task OnInitializedAsync()
+    {
+        vehicle = await CurrentVehicle.GetAsync();
+
+        if (vehicle is not null)
+        {
+            fuel = await Db.FuelRecords.AsNoTracking().Where(f => f.VehicleId == vehicle.Id).ToListAsync();
+            maintenance = await Db.MaintenanceRecords.AsNoTracking().Where(m => m.VehicleId == vehicle.Id).ToListAsync();
+
+            // All numbers are computed in memory (SQLite can't sum decimals in SQL).
+            currentOdometer = VehicleStats.CurrentOdometer(vehicle, fuel, maintenance);
+            mpg = VehicleStats.AverageMpg(fuel);
+            reminders = VehicleStats.GetReminders(maintenance, currentOdometer, DateTime.Today);
+        }
+
+        loading = false;
+    }
+
+    // Status is shown as text as well as colour so it does not rely on colour alone.
+    private static string StatusText(ReminderStatus s) => s switch
+    {
+        ReminderStatus.Overdue => "Overdue",
+        ReminderStatus.DueSoon => "Due soon",
+        _ => "Upcoming"
+    };
+
+    private static string BadgeClass(ReminderStatus s) => s switch
+    {
+        ReminderStatus.Overdue => "bg-danger",
+        ReminderStatus.DueSoon => "bg-warning text-dark",
+        _ => "bg-secondary"
+    };
+}

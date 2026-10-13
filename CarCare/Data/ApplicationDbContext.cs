@@ -7,6 +7,8 @@ namespace CarCare.Data;
 public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext<ApplicationUser>(options)
 {
     public DbSet<Vehicle> Vehicles { get; set; } = default!;
+    public DbSet<FuelRecord> FuelRecords { get; set; } = default!;
+    public DbSet<MaintenanceRecord> MaintenanceRecords { get; set; } = default!;
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -21,6 +23,15 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
             .HasOne<ApplicationUser>()
             .WithMany()
             .HasForeignKey(v => v.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Records belong to a vehicle and are removed with it.
+        builder.Entity<FuelRecord>()
+            .HasOne<Vehicle>().WithMany().HasForeignKey(f => f.VehicleId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<MaintenanceRecord>()
+            .HasOne<Vehicle>().WithMany().HasForeignKey(m => m.VehicleId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
